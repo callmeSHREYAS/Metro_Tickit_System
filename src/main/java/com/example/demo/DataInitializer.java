@@ -1,16 +1,26 @@
 package com.example.demo;
 
 import com.example.demo.entity.Fare;
+import com.example.demo.entity.MaintenanceIssue;
+import com.example.demo.entity.MetroCard;
 import com.example.demo.entity.Payment;
 import com.example.demo.entity.Route;
+import com.example.demo.entity.RouteStation;
+import com.example.demo.entity.Schedule;
 import com.example.demo.entity.Station;
 import com.example.demo.entity.Ticket;
+import com.example.demo.entity.Train;
 import com.example.demo.entity.User;
 import com.example.demo.repository.FareRepository;
+import com.example.demo.repository.MaintenanceIssueRepository;
+import com.example.demo.repository.MetroCardRepository;
 import com.example.demo.repository.PaymentRepository;
 import com.example.demo.repository.RouteRepository;
+import com.example.demo.repository.RouteStationRepository;
+import com.example.demo.repository.ScheduleRepository;
 import com.example.demo.repository.StationRepository;
 import com.example.demo.repository.TicketRepository;
+import com.example.demo.repository.TrainRepository;
 import com.example.demo.repository.UserRepository;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
@@ -27,21 +37,35 @@ public class DataInitializer implements CommandLineRunner {
     private final FareRepository fares;
     private final TicketRepository tickets;
     private final PaymentRepository payments;
+    private final MetroCardRepository cards;
+    private final TrainRepository trains;
+    private final ScheduleRepository schedules;
+    private final RouteStationRepository routeStations;
+    private final MaintenanceIssueRepository maintenanceIssues;
 
     public DataInitializer(UserRepository users, StationRepository stations, RouteRepository routes,
-                           FareRepository fares, TicketRepository tickets, PaymentRepository payments) {
+                           FareRepository fares, TicketRepository tickets, PaymentRepository payments,
+                           MetroCardRepository cards, TrainRepository trains, ScheduleRepository schedules,
+                           RouteStationRepository routeStations, MaintenanceIssueRepository maintenanceIssues) {
         this.users = users;
         this.stations = stations;
         this.routes = routes;
         this.fares = fares;
         this.tickets = tickets;
         this.payments = payments;
+        this.cards = cards;
+        this.trains = trains;
+        this.schedules = schedules;
+        this.routeStations = routeStations;
+        this.maintenanceIssues = maintenanceIssues;
     }
 
     @Override
     public void run(String... args) {
         seedUsers();
         seedNetwork();
+        seedOperations();
+        seedCards();
         seedTickets();
     }
 
@@ -100,6 +124,85 @@ public class DataInitializer implements CommandLineRunner {
         payment.amount = new BigDecimal("25.00");
         payment.createdAt = ticket.createdAt;
         payments.save(payment);
+    }
+
+    private void seedOperations() {
+        if (trains.count() == 0) {
+            trains.save(train("TR-001", "Metro 01", 900, 6));
+            trains.save(train("TR-002", "Metro 02", 900, 6));
+            trains.save(train("TR-003", "Airport Express 01", 600, 4));
+        }
+
+        if (routeStations.count() == 0) {
+            addRouteStation("RT-BLUE", "ST-UNI", 1);
+            addRouteStation("RT-BLUE", "ST-CEN", 2);
+            addRouteStation("RT-ORANGE", "ST-CEN", 1);
+            addRouteStation("RT-ORANGE", "ST-AIR", 2);
+            addRouteStation("RT-GREEN", "ST-MKT", 1);
+            addRouteStation("RT-GREEN", "ST-RIV", 2);
+        }
+
+        if (schedules.count() == 0) {
+            Schedule schedule = new Schedule();
+            schedule.scheduleId = "SCH-001";
+            schedule.trainId = "TR-001";
+            schedule.routeId = "RT-BLUE";
+            schedule.dayOfWeek = "DAILY";
+            schedule.scheduledDeparture = LocalDate.now().atTime(6, 0);
+            schedule.scheduledArrival = LocalDate.now().atTime(6, 34);
+            schedule.validFrom = LocalDate.now();
+            schedule.validTo = LocalDate.now().plusMonths(6);
+            schedule.isActive = true;
+            schedule.createdAt = LocalDateTime.now();
+            schedules.save(schedule);
+        }
+
+        if (maintenanceIssues.count() == 0) {
+            MaintenanceIssue issue = new MaintenanceIssue();
+            issue.issueId = "MI-001";
+            issue.trainId = "TR-002";
+            issue.stationId = "ST-MKT";
+            issue.reportedBy = "operator1";
+            issue.issueType = "Platform light";
+            issue.description = "Replace two platform lights near the west entrance.";
+            issue.status = "OPEN";
+            issue.priority = "LOW";
+            issue.createdAt = LocalDateTime.now().minusHours(3);
+            maintenanceIssues.save(issue);
+        }
+    }
+
+    private void seedCards() {
+        if (cards.count() > 0) return;
+        MetroCard card = new MetroCard();
+        card.cardId = "MC-RIDER1";
+        card.passengerId = "rider1";
+        card.balance = new BigDecimal("150.00");
+        card.issueDate = LocalDate.now().minusMonths(2);
+        card.expiryDate = LocalDate.now().plusYears(2);
+        card.createdAt = LocalDateTime.now();
+        card.isActive = true;
+        cards.save(card);
+    }
+
+    private Train train(String id, String number, int capacity, int coaches) {
+        Train train = new Train();
+        train.trainId = id;
+        train.trainNumber = number;
+        train.capacity = capacity;
+        train.totalCoaches = coaches;
+        train.manufactureYear = 2022;
+        train.createdAt = LocalDateTime.now();
+        train.isActive = true;
+        return train;
+    }
+
+    private void addRouteStation(String routeId, String stationId, int sequence) {
+        RouteStation routeStation = new RouteStation();
+        routeStation.routeId = routeId;
+        routeStation.stationId = stationId;
+        routeStation.sequenceNumber = sequence;
+        routeStations.save(routeStation);
     }
 
     private User user(String id, String first, String last, String password, String role, String contact, String stationId) {

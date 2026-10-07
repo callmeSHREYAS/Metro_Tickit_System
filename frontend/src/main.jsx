@@ -2,11 +2,15 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
-const RESOURCE_NAMES = ['users', 'stations', 'routes', 'fares', 'tickets', 'payments'];
-const EMPTY_DATA = { users: [], stations: [], routes: [], fares: [], tickets: [], payments: [] };
+const RESOURCE_ENDPOINTS = {
+  users: 'users', stations: 'stations', routes: 'routes', fares: 'fares', tickets: 'tickets',
+  payments: 'payments', cards: 'cards', trains: 'trains', schedules: 'schedules',
+  routeStations: 'route-stations', maintenanceIssues: 'maintenance-issues'
+};
+const EMPTY_DATA = Object.fromEntries(Object.keys(RESOURCE_ENDPOINTS).map((resource) => [resource, []]));
 const NAV_ITEMS = {
-  admin: [['dashboard', 'Dashboard'], ['book', 'Issue ticket'], ['tickets', 'Tickets'], ['network', 'Network'], ['users', 'Users'], ['admin', 'Admin']],
-  passenger: [['dashboard', 'Home'], ['book', 'Book'], ['tickets', 'My tickets'], ['network', 'Network']]
+  admin: [['dashboard', 'Dashboard'], ['book', 'Issue ticket'], ['tickets', 'Tickets'], ['network', 'Network'], ['users', 'Users'], ['operations', 'Operations']],
+  passenger: [['dashboard', 'Home'], ['book', 'Book'], ['tickets', 'My tickets'], ['network', 'Network'], ['cards', 'Metro card']]
 };
 
 async function api(resource, options = {}) {
@@ -46,6 +50,8 @@ function Icon({ name }) {
     network: <><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="7" r="2.5" /><circle cx="12" cy="18" r="2.5" /><path d="m8.2 7 7.1-.1M7.3 8l3.5 7.7m5.8-6.6-3.5 6.5" /></>,
     users: <><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="10" cy="7" r="4" /><path d="M20 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></>,
     admin: <><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11z" /><path d="m9 12 2 2 4-4" /></>,
+    cards: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 10h18M7 15h3" /></>,
+    operations: <><path d="M4 19V5m0 14h16M8 15l3-4 3 2 5-7" /><circle cx="8" cy="15" r="1" /><circle cx="11" cy="11" r="1" /><circle cx="14" cy="13" r="1" /></>,
     arrow: <><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></>,
     swap: <><path d="m16 3 4 4-4 4" /><path d="M20 7H4" /><path d="m8 21-4-4 4-4" /><path d="M4 17h16" /></>,
     train: <><rect x="5" y="3" width="14" height="16" rx="4" /><path d="M8 19l-2 3m10-3 2 3M8 7h.01M16 7h.01M5 14h14" /></>
@@ -144,6 +150,17 @@ function EmptyState({ children }) {
   return <div className="empty-state"><span className="empty-icon"><Icon name="train" /></span><p>{children}</p></div>;
 }
 
+function DataTable({ title, rows, columns, onAction, actionLabel }) {
+  return <section className="panel table-panel operations-table">
+    <div className="operations-table-heading"><h3>{title}</h3><span className="count-label">{rows.length} records</span></div>
+    {rows.length ? <div className="table-wrap"><table><thead><tr>{columns.map(([key, label]) => <th key={key}>{label}</th>)}{onAction && <th>Action</th>}</tr></thead><tbody>
+      {rows.map((row, index) => <tr key={row.id ?? row.cardId ?? row.trainId ?? row.scheduleId ?? row.issueId ?? row.paymentId ?? row.ticketId ?? row.userId ?? row.stationId ?? row.routeId ?? row.fareId ?? index}>
+        {columns.map(([key]) => <td key={key}>{row[key] == null || row[key] === '' ? '—' : String(row[key])}</td>)}{onAction && <td><button className="text-action" type="button" onClick={() => onAction(row)}>{actionLabel}</button></td>}
+      </tr>)}
+    </tbody></table></div> : <EmptyState>No {title.toLowerCase()} yet.</EmptyState>}
+  </section>;
+}
+
 function App() {
   const [currentUser, setCurrentUser] = useState(readSavedUser);
   const [data, setData] = useState(EMPTY_DATA);
@@ -158,6 +175,7 @@ function App() {
   const [bookingTo, setBookingTo] = useState('');
   const [bookingType, setBookingType] = useState('SINGLE');
   const [bookingFare, setBookingFare] = useState('');
+  const [cardAmount, setCardAmount] = useState('');
   const [selectedStation, setSelectedStation] = useState(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -193,8 +211,9 @@ function App() {
       return;
     }
     try {
-      const values = await Promise.all(RESOURCE_NAMES.map((resource) => api(resource)));
-      setData(Object.fromEntries(RESOURCE_NAMES.map((resource, index) => [resource, values[index] || []])));
+      const resources = Object.entries(RESOURCE_ENDPOINTS);
+      const values = await Promise.all(resources.map(([, endpoint]) => api(endpoint)));
+      setData(Object.fromEntries(resources.map(([resource], index) => [resource, values[index] || []])));
     } catch (error) {
       notify(`Could not load metro data: ${error.message}`, true);
     }
@@ -260,7 +279,7 @@ function App() {
   const bookingFareMatch = findFare(bookingFrom, bookingTo);
   const bookingFromName = stationName(bookingFrom);
   const bookingToName = stationName(bookingTo);
-  const title = view === 'dashboard' ? (isAdmin ? 'Dashboard' : 'Home') : view === 'book' ? (isAdmin ? 'Issue ticket' : 'Book ticket') : view === 'network' ? 'Metro network' : view === 'users' ? 'Users' : view === 'admin' ? 'Admin controls' : isAdmin ? 'Tickets' : 'My tickets';
+  const title = view === 'dashboard' ? (isAdmin ? 'Dashboard' : 'Home') : view === 'book' ? (isAdmin ? 'Issue ticket' : 'Book ticket') : view === 'network' ? 'Metro network' : view === 'users' ? 'Users' : view === 'operations' ? 'Operations center' : view === 'cards' ? 'Metro card' : isAdmin ? 'Tickets' : 'My tickets';
 
   useEffect(() => {
     if (bookingFareMatch && !bookingFare) setBookingFare(Number(bookingFareMatch.baseFare).toFixed(2));
@@ -377,6 +396,136 @@ function App() {
     }
   }
 
+  async function topUpCard(event, cardId) {
+    event.preventDefault();
+    const card = data.cards.find((item) => item.cardId === cardId);
+    const amount = Number(cardAmount);
+    if (!card || !Number.isFinite(amount) || amount <= 0) {
+      notify('Choose a card and enter a top-up amount greater than zero.', true);
+      return;
+    }
+    try {
+      const updated = await api(`cards/${encodeURIComponent(card.cardId)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ ...card, balance: Number(card.balance || 0) + amount })
+      });
+      setData((old) => ({ ...old, cards: old.cards.map((item) => item.cardId === updated.cardId ? updated : item) }));
+      setCardAmount('');
+      notify(`${money(amount)} added to your metro card`);
+    } catch (error) {
+      notify(`Could not top up card: ${error.message}`, true);
+    }
+  }
+
+  async function submitCard(event) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const card = {
+      cardId: form.get('cardId').trim(), passengerId: form.get('passengerId'),
+      balance: Number(form.get('balance')), issueDate: new Date().toISOString().slice(0, 10),
+      expiryDate: new Date(Date.now() + 2 * 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      createdAt: new Date().toISOString().slice(0, 19), isActive: true
+    };
+    try {
+      const created = await api('cards', { method: 'POST', body: JSON.stringify(card) });
+      setData((old) => ({ ...old, cards: [...old.cards, created] }));
+      formElement.reset();
+      notify('Metro card issued');
+    } catch (error) {
+      notify(`Could not issue card: ${error.message}`, true);
+    }
+  }
+
+  async function submitTrain(event) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const train = {
+      trainId: form.get('trainId').trim(), trainNumber: form.get('trainNumber').trim(),
+      capacity: Number(form.get('capacity')), totalCoaches: Number(form.get('totalCoaches')),
+      manufactureYear: Number(form.get('manufactureYear')), createdAt: new Date().toISOString().slice(0, 19), isActive: true
+    };
+    try {
+      const created = await api('trains', { method: 'POST', body: JSON.stringify(train) });
+      setData((old) => ({ ...old, trains: [...old.trains, created] }));
+      formElement.reset();
+      notify('Train added to fleet');
+    } catch (error) {
+      notify(`Could not add train: ${error.message}`, true);
+    }
+  }
+
+  async function submitSchedule(event) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const schedule = {
+      scheduleId: form.get('scheduleId').trim(), trainId: form.get('trainId'), routeId: form.get('routeId'),
+      dayOfWeek: form.get('dayOfWeek'), scheduledDeparture: form.get('scheduledDeparture'),
+      scheduledArrival: form.get('scheduledArrival'), validFrom: new Date().toISOString().slice(0, 10),
+      validTo: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      isActive: true, createdAt: new Date().toISOString().slice(0, 19)
+    };
+    try {
+      const created = await api('schedules', { method: 'POST', body: JSON.stringify(schedule) });
+      setData((old) => ({ ...old, schedules: [...old.schedules, created] }));
+      formElement.reset();
+      notify('Schedule created');
+    } catch (error) {
+      notify(`Could not create schedule: ${error.message}`, true);
+    }
+  }
+
+  async function submitRouteStation(event) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    try {
+      const created = await api('route-stations', { method: 'POST', body: JSON.stringify({
+        routeId: form.get('routeId'), stationId: form.get('stationId'), sequenceNumber: Number(form.get('sequenceNumber'))
+      }) });
+      setData((old) => ({ ...old, routeStations: [...old.routeStations, created] }));
+      formElement.reset();
+      notify('Station added to route');
+    } catch (error) {
+      notify(`Could not update route stops: ${error.message}`, true);
+    }
+  }
+
+  async function submitMaintenanceIssue(event) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const issue = {
+      issueId: form.get('issueId').trim(), trainId: form.get('trainId') || null,
+      stationId: form.get('stationId') || null, reportedBy: currentUser.userId,
+      issueType: form.get('issueType').trim(), description: form.get('description').trim(),
+      priority: form.get('priority'), status: 'OPEN', createdAt: new Date().toISOString().slice(0, 19)
+    };
+    try {
+      const created = await api('maintenance-issues', { method: 'POST', body: JSON.stringify(issue) });
+      setData((old) => ({ ...old, maintenanceIssues: [...old.maintenanceIssues, created] }));
+      formElement.reset();
+      notify('Maintenance issue reported');
+    } catch (error) {
+      notify(`Could not report issue: ${error.message}`, true);
+    }
+  }
+
+  async function resolveIssue(issue) {
+    try {
+      const updated = await api(`maintenance-issues/${encodeURIComponent(issue.issueId)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ ...issue, status: issue.status === 'RESOLVED' ? 'OPEN' : 'RESOLVED', resolvedAt: issue.status === 'RESOLVED' ? null : new Date().toISOString().slice(0, 19) })
+      });
+      setData((old) => ({ ...old, maintenanceIssues: old.maintenanceIssues.map((item) => item.issueId === updated.issueId ? updated : item) }));
+      notify(updated.status === 'RESOLVED' ? 'Issue marked resolved' : 'Issue reopened');
+    } catch (error) {
+      notify(`Could not update issue: ${error.message}`, true);
+    }
+  }
+
   if (!currentUser) return <><AuthScreen onSignIn={signIn} onSignUp={signUp} />{toast && <div className={`toast ${toast.isError ? 'error' : ''}`} role={toast.isError ? 'alert' : 'status'}>{toast.message}</div>}</>;
 
   return (
@@ -418,11 +567,32 @@ function App() {
 
         {view === 'network' && <section className="view"><div className="page-heading"><span className="eyebrow">YOUR CITY, CONNECTED</span><h2>Stations & lines</h2><p>Explore the stops and services that keep your city moving.</p></div><div className="network-summary"><span className="live-dot" /> <strong>{activeStations.length} stations online</strong><span>·</span><span>{data.routes.length} active lines</span><span className="summary-spacer" /><span className="count-label">{data.fares.length} fares configured</span></div><div className="network-grid"><section className="panel map-panel"><PanelHeading eyebrow="LIVE NETWORK" title="Metro map" /><div className="network-map"><div className="network-line map-line-blue" /><div className="network-line map-line-orange" /><div className="network-line map-line-green" />{data.stations.map((station, index) => { const coordinates = [[15, 26], [39, 17], [60, 37], [80, 24], [42, 73], [72, 76], [20, 66]]; const point = coordinates[index % coordinates.length]; return <button key={station.stationId} className={`network-station ${selectedStation?.stationId === station.stationId ? 'selected' : ''} ${station.isActive === false ? 'station-offline' : ''}`} type="button" style={{ left: `${point[0]}%`, top: `${point[1]}%`, '--station-color': station.lineColor || '#3067e8' }} onClick={() => setSelectedStation(station)} aria-label={`Show ${station.stationCode || station.stationId}`}><span className="station-dot" /><strong>{station.stationCode || station.stationId}</strong></button>; })}{selectedStation && <div className="map-tooltip"><button type="button" aria-label="Close station details" onClick={() => setSelectedStation(null)}>×</button><span className="eyebrow">STATION DETAILS</span><strong>{selectedStation.stationCode || selectedStation.stationId}</strong><small>{selectedStation.address || 'No address available'}</small><span className={`badge ${selectedStation.isActive === false ? 'muted' : 'good'}`}><i />{selectedStation.isActive === false ? 'Offline' : 'Online'}</span></div>}</div></section><section className="panel stations-panel"><PanelHeading eyebrow="STOP BY STOP" title="Station directory" action={<span className="count-label">{data.stations.length} total</span>} />{data.stations.length ? <div className="stack-list">{data.stations.map((station) => <button className={`stack-item ${selectedStation?.stationId === station.stationId ? 'selected' : ''}`} type="button" key={station.stationId} onClick={() => setSelectedStation(station)}><span className="color-dot" style={{ background: station.lineColor || '#3067e8' }} /><span className="station-item-copy"><strong>{station.stationCode || station.stationId}</strong><small>{station.address || 'No address'}</small></span><span className={`station-status ${station.isActive === false ? 'offline' : ''}`}><i />{station.isActive === false ? 'Offline' : 'Online'}</span></button>)}</div> : <EmptyState>No stations are configured yet.</EmptyState>}</section></div><section className="panel route-list-panel"><PanelHeading eyebrow="SERVICE OVERVIEW" title="Metro lines" />{data.routes.length ? <div className="route-cards">{data.routes.map((route) => <article className="route-card" key={route.routeId}><span className="route-color" style={{ background: route.lineColor || '#3067e8' }} /><div><strong>{route.routeName || route.routeId}</strong><small>{stationName(route.startStationId)} <span>→</span> {stationName(route.endStationId)}</small></div><span className="route-time">{route.estimatedTime ? `${route.estimatedTime} min` : 'Line'} <Icon name="arrow" /></span></article>)}</div> : <EmptyState>No metro lines are configured yet.</EmptyState>}</section></section>}
 
-        {view === 'admin' && isAdmin && <section className="view"><div className="page-heading"><span className="eyebrow">KEEP THINGS MOVING</span><h2>Operations setup</h2><p>Manage your stations, fares, and the people behind the network.</p></div><div className="admin-grid">
+        {view === 'operations' && isAdmin && <section className="view"><div className="page-heading"><span className="eyebrow">KEEP THINGS MOVING</span><h2>Operations center</h2><p>Set up the network, manage transit operations, and review every system record.</p></div><div className="admin-grid">
           <section className="panel admin-form-panel"><PanelHeading eyebrow="NETWORK SETUP" title="Add a station" /><form className="form-grid" onSubmit={submitStation}><Field label="STATION ID"><input name="stationId" placeholder="ST-NEW" required /></Field><Field label="STATION NAME"><input name="stationCode" placeholder="Central" required /></Field><Field label="ADDRESS"><input name="address" placeholder="Area or terminal" /></Field><Field label="LINE COLOR"><input name="lineColor" type="color" defaultValue="#3067e8" /></Field><button className="dark-action" type="submit">Save station <Icon name="arrow" /></button></form></section>
           <section className="panel admin-form-panel"><PanelHeading eyebrow="PRICING" title="Add a fare" /><form className="form-grid" onSubmit={submitFare}><Field label="FARE ID"><input name="fareId" placeholder="FR-NEW" required /></Field><Field label="FROM"><select name="sourceStationId" defaultValue="" required><option value="">Choose origin</option>{activeStations.map((station) => <option key={station.stationId} value={station.stationId}>{station.stationCode || station.stationId}</option>)}</select></Field><Field label="TO"><select name="destStationId" defaultValue="" required><option value="">Choose destination</option>{activeStations.map((station) => <option key={station.stationId} value={station.stationId}>{station.stationCode || station.stationId}</option>)}</select></Field><Field label="BASE FARE (RS)"><input name="baseFare" type="number" min="0" step="0.01" placeholder="0.00" required /></Field><button className="dark-action" type="submit">Save fare <Icon name="arrow" /></button></form></section>
           <section className="panel admin-form-panel"><PanelHeading eyebrow="TEAM & ACCESS" title="Add a user" /><form className="form-grid" onSubmit={submitUser}><Field label="USER ID"><input name="userId" required /></Field><Field label="FULL NAME"><input name="name" placeholder="First Last" required /></Field><Field label="CONTACT"><input name="contact" type="email" placeholder="name@example.com" /></Field><Field label="ROLE"><select name="role"><option value="USER">Passenger</option><option value="ADMIN">Admin</option></select></Field><Field label="PASSWORD"><input name="password" type="password" defaultValue="password123" required /></Field><button className="dark-action" type="submit">Save user <Icon name="arrow" /></button></form></section>
-        </div></section>}
+          <section className="panel admin-form-panel"><PanelHeading eyebrow="PASSENGER SERVICES" title="Issue a metro card" /><form className="form-grid" onSubmit={submitCard}><Field label="CARD ID"><input name="cardId" placeholder="MC-NEW" required /></Field><Field label="PASSENGER"><select name="passengerId" defaultValue="" required><option value="">Choose a passenger</option>{data.users.filter((user) => user.role !== 'ADMIN').map((user) => <option key={user.userId} value={user.userId}>{displayName(user)}</option>)}</select></Field><Field label="STARTING BALANCE (RS)"><input name="balance" type="number" min="0" step="0.01" defaultValue="100" required /></Field><button className="dark-action" type="submit">Issue card <Icon name="arrow" /></button></form></section>
+          <section className="panel admin-form-panel"><PanelHeading eyebrow="FLEET" title="Add a train" /><form className="form-grid" onSubmit={submitTrain}><Field label="TRAIN ID"><input name="trainId" placeholder="TR-004" required /></Field><Field label="TRAIN NUMBER"><input name="trainNumber" placeholder="Metro 04" required /></Field><Field label="CAPACITY"><input name="capacity" type="number" min="1" defaultValue="800" required /></Field><Field label="COACHES"><input name="totalCoaches" type="number" min="1" defaultValue="6" required /></Field><Field label="MANUFACTURE YEAR"><input name="manufactureYear" type="number" min="1980" max="2100" defaultValue="2025" required /></Field><button className="dark-action" type="submit">Add train <Icon name="arrow" /></button></form></section>
+          <section className="panel admin-form-panel"><PanelHeading eyebrow="TIMETABLE" title="Add a schedule" /><form className="form-grid" onSubmit={submitSchedule}><Field label="SCHEDULE ID"><input name="scheduleId" placeholder="SCH-002" required /></Field><Field label="TRAIN"><select name="trainId" defaultValue="" required><option value="">Choose a train</option>{data.trains.map((train) => <option key={train.trainId} value={train.trainId}>{train.trainNumber}</option>)}</select></Field><Field label="ROUTE"><select name="routeId" defaultValue="" required><option value="">Choose a route</option>{data.routes.map((route) => <option key={route.routeId} value={route.routeId}>{route.routeName}</option>)}</select></Field><Field label="DAY"><select name="dayOfWeek"><option>DAILY</option><option>WEEKDAYS</option><option>WEEKENDS</option></select></Field><Field label="DEPARTURE"><input name="scheduledDeparture" type="datetime-local" required /></Field><Field label="ARRIVAL"><input name="scheduledArrival" type="datetime-local" required /></Field><button className="dark-action" type="submit">Save schedule <Icon name="arrow" /></button></form></section>
+          <section className="panel admin-form-panel"><PanelHeading eyebrow="ROUTE STOPS" title="Add station to route" /><form className="form-grid" onSubmit={submitRouteStation}><Field label="ROUTE"><select name="routeId" defaultValue="" required><option value="">Choose a route</option>{data.routes.map((route) => <option key={route.routeId} value={route.routeId}>{route.routeName}</option>)}</select></Field><Field label="STATION"><select name="stationId" defaultValue="" required><option value="">Choose a station</option>{activeStations.map((station) => <option key={station.stationId} value={station.stationId}>{station.stationCode}</option>)}</select></Field><Field label="STOP ORDER"><input name="sequenceNumber" type="number" min="1" required /></Field><button className="dark-action" type="submit">Add stop <Icon name="arrow" /></button></form></section>
+          <section className="panel admin-form-panel"><PanelHeading eyebrow="SERVICE & SAFETY" title="Report an issue" /><form className="form-grid" onSubmit={submitMaintenanceIssue}><Field label="ISSUE ID"><input name="issueId" placeholder="MI-002" required /></Field><Field label="ISSUE TYPE"><input name="issueType" placeholder="Signal repair" required /></Field><Field label="STATION"><select name="stationId" defaultValue=""><option value="">Select a station</option>{data.stations.map((station) => <option key={station.stationId} value={station.stationId}>{station.stationCode}</option>)}</select></Field><Field label="TRAIN"><select name="trainId" defaultValue=""><option value="">Select a train</option>{data.trains.map((train) => <option key={train.trainId} value={train.trainId}>{train.trainNumber}</option>)}</select></Field><Field label="PRIORITY"><select name="priority"><option>LOW</option><option>MEDIUM</option><option>HIGH</option></select></Field><Field label="DESCRIPTION"><input name="description" required /></Field><button className="dark-action" type="submit">Report issue <Icon name="arrow" /></button></form></section>
+        </div>
+        <div className="operations-tables">
+          <DataTable title="Metro cards" rows={data.cards} columns={ [['cardId', 'Card'], ['passengerId', 'Passenger'], ['balance', 'Balance (Rs)'], ['isActive', 'Active']] } />
+          <DataTable title="Trains" rows={data.trains} columns={ [['trainId', 'Train ID'], ['trainNumber', 'Number'], ['capacity', 'Capacity'], ['totalCoaches', 'Coaches'], ['isActive', 'Active']] } />
+          <DataTable title="Schedules" rows={data.schedules} columns={ [['scheduleId', 'Schedule'], ['trainId', 'Train'], ['routeId', 'Route'], ['dayOfWeek', 'Days'], ['scheduledDeparture', 'Departure'], ['scheduledArrival', 'Arrival']] } />
+          <DataTable title="Route stations" rows={data.routeStations} columns={ [['routeId', 'Route'], ['stationId', 'Station'], ['sequenceNumber', 'Stop order']] } />
+          <DataTable title="Maintenance issues" rows={data.maintenanceIssues} columns={ [['issueId', 'Issue'], ['issueType', 'Type'], ['priority', 'Priority'], ['status', 'Status'], ['stationId', 'Station'], ['trainId', 'Train']] } onAction={resolveIssue} actionLabel="Toggle status" />
+          <DataTable title="Routes" rows={data.routes} columns={ [['routeId', 'Route'], ['routeName', 'Name'], ['startStationId', 'From'], ['endStationId', 'To'], ['estimatedTime', 'Minutes']] } />
+          <DataTable title="Fares" rows={data.fares} columns={ [['fareId', 'Fare'], ['sourceStationId', 'From'], ['destStationId', 'To'], ['baseFare', 'Amount (Rs)']] } />
+          <DataTable title="Stations" rows={data.stations} columns={ [['stationId', 'Station'], ['stationCode', 'Name'], ['address', 'Address'], ['isActive', 'Active']] } />
+          <DataTable title="Users" rows={data.users} columns={ [['userId', 'User ID'], ['firstName', 'First name'], ['lastName', 'Last name'], ['role', 'Role'], ['isActive', 'Active']] } />
+          <DataTable title="Tickets" rows={data.tickets} columns={ [['ticketId', 'Ticket'], ['passengerId', 'Passenger'], ['sourceStationId', 'From'], ['destStationId', 'To'], ['ticketType', 'Type']] } />
+          <DataTable title="Payments" rows={data.payments} columns={ [['paymentId', 'Payment'], ['ticketId', 'Ticket'], ['amount', 'Amount (Rs)'], ['createdAt', 'Paid at']] } />
+        </div>
+        </section>}
+
+        {view === 'cards' && !isAdmin && <section className="view"><div className="page-heading"><span className="eyebrow">TAP IN & GO</span><h2>Your metro card</h2><p>Check your balance and top up before your next ride.</p></div>{data.cards.filter((card) => card.passengerId === currentUser.userId).map((card) => <section className="panel card-account" key={card.cardId}><div className="metro-card-visual"><div><span className="eyebrow light-eyebrow">METROPASS · TRAVEL CARD</span><strong>{money(card.balance)}</strong><small>Available balance</small></div><span className="card-chip" aria-hidden="true" /><div className="metro-card-footer"><span>{displayName(currentUser)}</span><span>{card.cardId}</span></div></div><div className="card-account-info"><span className={`badge ${card.isActive === false ? 'muted' : 'good'}`}><i />{card.isActive === false ? 'Inactive' : 'Active card'}</span><span>Valid until {formatDate(card.expiryDate)}</span></div><form className="card-topup" onSubmit={(event) => topUpCard(event, card.cardId)}><Field label="TOP UP AMOUNT (RS)"><input type="number" min="1" step="0.01" value={cardAmount} onChange={(event) => setCardAmount(event.target.value)} placeholder="Enter amount" required /></Field><button className="primary-action" type="submit">Add balance <Icon name="arrow" /></button></form></section>)}{!data.cards.some((card) => card.passengerId === currentUser.userId) && <section className="panel"><EmptyState>No metro card is linked to your account yet. Ask an administrator to issue one.</EmptyState></section>}</section>}
 
         {view === 'users' && isAdmin && <section className="view"><div className="page-heading"><span className="eyebrow">THE PEOPLE WHO KEEP US MOVING</span><h2>Riders & team</h2><p>Registered passengers and staff accounts in your network.</p></div><section className="panel table-panel"><div className="table-toolbar"><div className="search-wrap"><span className="search-icon">⌕</span><input className="search-input" value={userSearch} onChange={(event) => setUserSearch(event.target.value)} placeholder="Search people by name, ID, or role…" aria-label="Search users" /></div><span className="count-label">{visibleUsers.length} {visibleUsers.length === 1 ? 'person' : 'people'}</span></div>{visibleUsers.length ? <div className="table-wrap"><table><thead><tr><th>User</th><th>Contact</th><th>Role</th><th>Registered</th><th>Status</th></tr></thead><tbody>{visibleUsers.map((user) => <tr key={user.userId}><td><div className="user-cell"><span className="avatar">{displayName(user).slice(0, 1).toUpperCase()}</span><span><strong>{displayName(user)}</strong><small>{user.userId}</small></span></div></td><td>{user.contact || '—'}</td><td><span className={`role-badge ${user.role === 'ADMIN' ? 'admin-role' : ''}`}>{user.role || 'USER'}</span></td><td>{formatDate(user.registrationDate)}</td><td><span className={`badge ${user.isActive === false ? 'muted' : 'good'}`}><i />{user.isActive === false ? 'Inactive' : 'Active'}</span></td></tr>)}</tbody></table></div> : <EmptyState>{userSearch ? 'No people match your search.' : 'No registered users yet.'}</EmptyState>}</section></section>}
 
