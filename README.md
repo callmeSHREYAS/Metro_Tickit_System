@@ -2,6 +2,14 @@
 
 A simple Spring Boot and PostgreSQL implementation of the supplied ER diagram.
 
+## Frontend
+
+The React frontend is bundled locally into Spring Boot's static resources, so the
+running application does not depend on a React CDN. After changing the frontend,
+run `npm install` once and `npm run build` before starting the Spring Boot app.
+For frontend development with hot reload, run `npm run dev` while the backend is
+available at `http://localhost:8080`; Vite proxies `/api` requests to it.
+
 ## Run with Docker
 
 From this directory:
